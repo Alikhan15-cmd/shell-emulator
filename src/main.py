@@ -4,7 +4,7 @@ import shlex
 import argparse
 import tkinter as tk
 from tkinter import scrolledtext
-import tomllib  # Специальная библиотека для чтения TOML файлов
+import tomllib
 
 
 class EmulatorGUI:
@@ -26,14 +26,50 @@ class EmulatorGUI:
         self.entry.pack(padx=10, pady=10)
         self.entry.bind("<Return>", self.process_input)
 
-        # 1. Отладочный вывод настроек при запуске[cite: 8]
-        self.display_text("--- Запуск эмулятора: Отладочный вывод ---")
-        self.display_text(f"Путь к VFS: {self.config.get('vfs_path', 'Не задан')}")
-        self.display_text(f"Стартовый скрипт: {self.config.get('script_path', 'Не задан')}")
-        self.display_text("--------------------------------------------\n")
+        # 1. Загружаем файлы в память при запуске[cite: 9]
+        self.vfs = {}  # Здесь будем хранить всю виртуальную файловую систему
+        self.current_path = "/"  # Мы всегда начинаем работу в корневой папке (обозначается как "/")
+        self.load_vfs()
 
-        # 2. Выполняем стартовый скрипт, если он есть[cite: 9]
         self.run_startup_script()
+
+    def load_vfs(self):
+        # Эта функция читает реальную директорию на диске пользователя и загружает её в память[cite: 9]
+        vfs_real_path = self.config.get('vfs_path', '')
+        if not vfs_real_path or not os.path.exists(vfs_real_path):
+            self.display_text("Предупреждение: Папка VFS не найдена!")
+            return
+
+        # Создаем корень
+        self.vfs["/"] = {"type": "dir", "content": []}
+
+        for root, dirs, files in os.walk(vfs_real_path):
+            # Вычисляем путь внутри эмулятора
+            rel_path = os.path.relpath(root, vfs_real_path)
+            vfs_path = "/" if rel_path == "." else "/" + rel_path.replace("\\", "/")
+
+            if vfs_path not in self.vfs:
+                self.vfs[vfs_path] = {"type": "dir", "content": []}
+
+            # Запоминаем папки
+            for d in dirs:
+                self.vfs[vfs_path]["content"].append(d)
+
+            # Запоминаем файлы и их содержимое в память, чтобы потом не трогать диск[cite: 9]
+            for f in files:
+                self.vfs[vfs_path]["content"].append(f)
+                file_real_path = os.path.join(root, f)
+                file_vfs_path = vfs_path + ("" if vfs_path == "/" else "/") + f
+
+                try:
+                    with open(file_real_path, 'r', encoding='utf-8') as file_obj:
+                        content = file_obj.read()
+                except Exception:
+                    content = "<содержимое файла>"
+
+                self.vfs[file_vfs_path] = {"type": "file", "content": content}
+
+        self.display_text("VFS успешно загружена в память!")
 
     def display_text(self, text):
         self.text_area.insert(tk.END, text + "\n")
@@ -47,11 +83,9 @@ class EmulatorGUI:
                     command = line.strip()
                     if not command:
                         continue
-                    # Имитируем ввод пользователя[cite: 9]
                     self.display_text(f"> {command}")
                     success = self.execute_command(command)
                     if not success:
-                        # Останавливаемся при первой же ошибке[cite: 9]
                         self.display_text("Ошибка во время исполнения стартового скрипта! Остановка.")
                         break
 
@@ -76,8 +110,13 @@ class EmulatorGUI:
         if cmd == "exit":
             self.root.destroy()
             return True
-        elif cmd in ["ls", "cd"]:
-            self.display_text(f"Вызвана команда: {cmd}, аргументы: {args[1:]}")
+        elif cmd == "ls":
+            # Теперь ls по-настоящему выводит список файлов из памяти![cite: 9]
+            items = self.vfs.get(self.current_path, {}).get("content", [])
+            self.display_text("  ".join(items) if items else "(пусто)")
+            return True
+        elif cmd == "cd":
+            self.display_text(f"Вызвана команда-заглушка: cd, аргументы: {args[1:]}")
             return True
         else:
             self.display_text(f"{cmd}: команда не найдена")
@@ -85,7 +124,6 @@ class EmulatorGUI:
 
 
 def load_settings():
-    # Настраиваем чтение параметров из командной строки[cite: 8]
     parser = argparse.ArgumentParser()
     parser.add_argument('--vfs', help='Путь к VFS')
     parser.add_argument('--script', help='Путь к стартовому скрипту')
@@ -93,13 +131,10 @@ def load_settings():
     args = parser.parse_args()
 
     config_data = {}
-
-    # Читаем конфигурационный файл[cite: 8]
     if os.path.exists(args.config):
         with open(args.config, "rb") as f:
             config_data = tomllib.load(f)
 
-    # Приоритет командной строки над файлом[cite: 9]
     if args.vfs:
         config_data['vfs_path'] = args.vfs
     if args.script:
