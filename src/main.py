@@ -179,7 +179,7 @@ class EmulatorGUI:
                 self.display_text(f"cp: {args[1]}: Нет такого файла")
                 return False
 
-            # Копируем файл в виртуальной памяти[cite: 10]
+            # Копируем файл в виртуальной памяти
             self.vfs[dst] = {"type": "file", "content": self.vfs[src]["content"]}
 
             # Добавляем имя нового файла в папку, чтобы команда ls его видела

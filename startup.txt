@@ -1,0 +1,7 @@
+whoami
+ls
+cd nonexistent_folder
+wc hello.txt.txt
+uniq hello.txt.txt
+cp hello.txt.txt auto_copy.txt
+ls
